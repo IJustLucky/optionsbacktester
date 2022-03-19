@@ -2,6 +2,7 @@ package options
 
 import (
 	"github.com/alpacahq/alpaca-trade-api-go/v2/marketdata"
+	"github.com/chobie/go-gaussian"
 	"github.com/piquette/finance-go/equity"
 	"github.com/piquette/finance-go/options"
 	"log"
@@ -11,23 +12,21 @@ import (
 
 const (
 	interest = 7.9
-	ticker   = "SPY"
-	bench    = "UVXY"
 )
 
-func Alpaca() (x []float64, y []float64, p1 float64, p2 float64, std1 float64, std2 float64) {
-	apiKey := "PKRBH1534VMCJOEETZFW"
-	apiSecret := "1UFIFRbyo50wbeb96OuBO7JfhgeaoPVXBw7wFBOw"
+func Alpaca(str string) (x []float64, p1 float64, std float64) {
+	apiKey := "PKSFCPJRTS1RQU81LHIX"
+	apiSecret := "QcCwcGWATUHfiT2xDWj2cb9xNua98QjyDz5Y9tHH"
 	// baseURL := "https://paper-api.Alpaca.markets"
 	feed := "sip"
-	spy, err := marketdata.NewClient(marketdata.ClientOpts{
+	equity, err := marketdata.NewClient(marketdata.ClientOpts{
 		ApiKey:    apiKey,
 		ApiSecret: apiSecret,
 		Feed:      feed,
-	}).GetBars(ticker, marketdata.GetBarsParams{
+	}).GetBars(str, marketdata.GetBarsParams{
 		TimeFrame: marketdata.OneMin,
-		Start:     time.Date(2022, 3, 1, 13, 30, 0, 0, time.UTC),
-		End:       time.Date(2022, 3, 13, 13, 30, 1, 0, time.UTC),
+		Start:     time.Date(2022, 3, 18, 9, 30, 0, 0, time.UTC),
+		End:       time.Now(),
 	})
 
 	if err != nil {
@@ -35,7 +34,7 @@ func Alpaca() (x []float64, y []float64, p1 float64, p2 float64, std1 float64, s
 	}
 
 	var eq []float64
-	for _, v := range spy {
+	for _, v := range equity {
 		eq = append(eq, v.Close)
 	}
 
@@ -44,44 +43,62 @@ func Alpaca() (x []float64, y []float64, p1 float64, p2 float64, std1 float64, s
 		stddev += v
 	}
 
-	stddev = math.Sqrt(stddev / float64(len(spy)))
-
-	tic, err := marketdata.NewClient(marketdata.ClientOpts{
-		ApiKey:    apiKey,
-		ApiSecret: apiSecret,
-		Feed:      feed,
-	}).GetBars(bench, marketdata.GetBarsParams{
-		TimeFrame: marketdata.OneMin,
-		Start:     time.Date(2022, 3, 1, 13, 30, 0, 0, time.UTC),
-		End:       time.Date(2022, 3, 13, 13, 30, 1, 0, time.UTC),
-	})
-	if err != nil {
-		log.Fatal(err)
-	}
-	var earr []float64
-	for _, j := range tic {
-		earr = append(earr, j.Close)
-	}
-
-	var stddev2 float64
-	for _, v := range earr {
-		stddev2 += v
-	}
-	stddev2 = math.Sqrt(stddev2 / float64(len(earr)))
-	return eq, earr, eq[0], earr[0], stddev, stddev2
+	stddev = math.Sqrt(stddev / float64(len(equity)))
+	return eq, eq[0], stddev
 }
 
-func GetOptionsData() (K float64, q float64, t float64) {
-	s, err := equity.Get(ticker)
+func GetOptionsData(str string) (K float64, q float64, t float64) {
+	s, err := equity.Get(str)
 	if err != nil {
 		log.Fatal(err)
 	}
-	o := options.GetStraddle(ticker)
+	o := options.GetStraddle(str)
 	K = o.Meta().Strikes[1]
 	q = s.TrailingAnnualDividendYield
-	days := float64(1)
-	t = days
-	return K, q, 90
+	t1 := o.Meta().ExpirationDate
+	t = float64(t1 / 60 / 60 / 24 / 365)
+	return K, q, t
+}
+
+type Option struct {
+	StrikePrice      float64
+	TimeToExpiration float64
+	Type             string
+}
+
+type Underlying struct {
+	Symbol     string
+	Price      float64
+	Volatility float64
+}
+
+type BS struct {
+	StrikePrice          float64
+	UnderlyingPrice      float64
+	RiskFreeInterestRate float64
+	Volatility           float64
+	TimeToExpiration     float64
+	Type                 string
+	D1                   float64
+	D2                   float64
+	Delta                float64
+	Theta                float64
+	Gamma                float64
+	Kappa                float64
+	Rho                  float64
+	ImpliedVolatility    float64
+	TheoPrice            float64
+	HalfLifeSTD          float64
+	HalfLifeTheta        float64
+	Norm                 *gaussian.Gaussian
+}
+
+func Mean(x []float64) float64 {
+	var Mu float64
+	for _, v := range x {
+		Mu += v
+	}
+	return Mu / float64(len(x))
 }
 
 func Length(p []float64) float64 {
@@ -94,10 +111,6 @@ func Sum(p []float64) float64 {
 		s = s + v
 	}
 	return s
-}
-
-func Mean(p []float64) float64 {
-	return Sum(p) / Length(p)
 }
 
 func Covariance(e1 []float64, e2 []float64) float64 {
@@ -133,16 +146,6 @@ func Covariance(e1 []float64, e2 []float64) float64 {
 	return cov
 }
 
-func Variance(p []float64) float64 {
-	l := Length(p) - 1
-	m := Mean(p)
-	var sigmasq float64
-	for i := range p {
-		sigmasq += math.Pow(p[i]-m, 2)
-	}
-	return sigmasq / (l - 1)
-}
-
 func Alpha(p []float64, b float64, r float64, x []float64) float64 {
 	mr := Mean(p)
 	mm := Mean(x)
@@ -150,11 +153,11 @@ func Alpha(p []float64, b float64, r float64, x []float64) float64 {
 	Ru := lele[0] - mr
 	lele2 := x[len(x)-1:]
 	Rmu := lele2[0] - mm
-	R := Ru / mr
+	R1 := Ru / mr
 	Rf := r / mr
 	Rm := Rmu / mr
 	bdif := Rm - Rf
-	a := R - (Rf + b*bdif)
+	a := R1 - (Rf + b*bdif)
 	return a
 }
 
@@ -164,163 +167,22 @@ func Sharpe(a float64, r float64, v float64) float64 {
 }
 
 func Beta(p []float64, x []float64) float64 {
-	return Covariance(p, x) / Variance(x)
+	Mu := Mean(x)
+	return Covariance(p, x) / Variance(Mu, x)
 }
 
-func D(p []float64) (d1 float64, d2 float64) {
-	_, _, S, _, _, _ := Alpaca()
-	K, _, _ := GetOptionsData()
-	R := R(interest)
-	_, Q, _ := GetOptionsData()
-	_, _, T := GetOptionsData()
-	V := Variance(p)
-	V = math.Sqrt(V)
-	div := S / K
-	g, _ := math.Lgamma(div)
-	b := R - Q
-	w := math.Pow(V, 2)
-	w = w / 2
-	c := b + w
-	j := T * c
-	o := S / K
-	d1 = (g*o + j) / (V * math.Sqrt(T))
-	d2 = d1 - (V * math.Sqrt(T))
-	return d1, d2
-}
-
-func DeltaC(x []float64) float64 {
-	_, Q, _ := GetOptionsData()
-	_, _, T := GetOptionsData()
-	e := math.E
-	d1, _ := D(x)
-	l := math.Pow(e, -T*Q)
-	c := Cdf(x, d1)
-	return l * c
-}
-
-func DeltaP(x []float64) float64 {
-	_, Q, _ := GetOptionsData()
-	_, _, T := GetOptionsData()
-	e := math.E
-	d1, _ := D(x)
-	c := Cdf(x, d1)
-	l := math.Pow(e, -T*Q)
-	return -(l * c)
-}
-
-func Gamma() float64 {
-	R := R(interest)
-	_, _, S, _, std, _ := Alpaca()
-	K, Q, t := GetOptionsData()
-	drq := math.Exp(-Q * t)
-	drd := S * std * math.Sqrt(t)
-	d1pdf := D1pdff(S, K, t, std, Q, R)
-	gamma1 := (drq / drd) * d1pdf
-	return gamma1
-}
-
-func Kappa(b bool) float64 {
-	R := R(interest)
-	_, _, S, _, std, _ := Alpaca()
-	K, Q, t := GetOptionsData()
-	d1 := D1pdff(S, K, t, std, Q, R)
-	t = math.Sqrt(t)
-	if b == true || b == false {
-		return S * math.Exp(-Q*t-d1*d1/2) * math.Sqrt(t) * math.Sqrt(2*math.Pi) / 100
+func Variance(Mu float64, x []float64) float64 {
+	var sigmasq float64
+	for _, v := range x {
+		sigmasq += math.Pow(v-Mu, 2)
 	}
-
-	return 2 * math.Exp(-Q*t-d1*d1/2) * math.Sqrt(t) * math.Sqrt(2*math.Pi) / 100
+	return sigmasq / float64(len(x))
 }
-
-func RhoC(x []float64) float64 {
-	K, _, _ := GetOptionsData()
-	R := R(interest)
-	R = R / 100
-	_, d2 := D(x)
-	_, _, T := GetOptionsData()
-	e := math.E
-	l := math.Pow(e, -1.0*R*T)
-	N := Cdf(x, d2)
-	return K * T * l * N / 100
-}
-
-func RhoP(x []float64) float64 {
-	K, _, _ := GetOptionsData()
-	R := R(interest)
-	_, _, T := GetOptionsData()
-	_, d2 := D(x)
-	e := math.E
-	R = R / 100
-	l := math.Pow(e, -R*T)
-	N := Cdf(x, d2)
-	return K * T * l * -(N) / 100
-}
-
-var sqtwopi = math.Sqrt(2 * math.Pi)
-var IVPrecision = 0.00001
-
-func D1f(underlying float64, strike float64, timeToExpiration float64, volatility float64, riskFreeInterest float64, dividend float64, volatilityWithExpiration float64) float64 {
-	d1 := math.Log(underlying/strike) + (timeToExpiration * (riskFreeInterest - dividend + ((volatility * volatility) * 0.5)))
-	d1 = d1 / volatilityWithExpiration
-	return d1
-}
-
-func D2f(d1 float64, volatilityWithExpiration float64) float64 {
-	d2 := d1 - volatilityWithExpiration
-	return d2
-}
-func D1pdff(underlying float64, strike float64, timeToExpiration float64, volatility float64, riskFreeInterest float64, dividend float64) float64 {
-	vt := volatility * (math.Sqrt(timeToExpiration))
-	d1 := D1f(underlying, strike, timeToExpiration, volatility, riskFreeInterest, dividend, vt)
-	d1pdf := math.Exp(-(d1 * d1) * 0.5)
-	d1pdf = d1pdf / sqtwopi
-	return d1pdf
-}
-
-func Theta(x []float64, callType bool, underlying float64, strike float64, timeToExpiration float64, volatility float64, riskFreeInterest float64, dividend float64) float64 {
-
-	var sign float64
-	if !callType {
-		sign = -1
-	} else {
-		sign = 1
-	}
-
-	sqt := math.Sqrt(timeToExpiration)
-	drq := math.Exp(-dividend * timeToExpiration)
-	dr := math.Exp(-riskFreeInterest * timeToExpiration)
-	d1pdf := D1pdff(underlying, strike, timeToExpiration, volatility, riskFreeInterest, dividend)
-	twosqt := 2 * sqt
-	p1 := -1 * ((underlying * volatility * drq) / twosqt) * d1pdf
-
-	vt := volatility * (sqt)
-	d1 := D1f(underlying, strike, timeToExpiration, volatility, riskFreeInterest, dividend, vt)
-	d2 := D2f(d1, vt)
-	var nd1, nd2 float64
-
-	d1 = sign * d1
-	d2 = sign * d2
-	nd1 = Cdf(x, d1)
-	nd2 = Cdf(x, d2)
-
-	p2 := -sign * riskFreeInterest * strike * dr * nd2
-	p3 := sign * dividend * underlying * drq * nd1
-	theta := (p1 + p2 + p3) / 365
-	return theta
-}
-
-func R(i float64) float64 {
-	g, _ := math.Lgamma(1.0 + i)
-	return g
-}
-
-var sqrt2 = math.Pow(2, 0.5)
-var toomanydev float64 = 8
 
 func Pdf(x []float64, d float64) float64 {
 	var expon float64
 	Mu := Mean(x)
-	Sigma := math.Sqrt(Variance(x))
+	Sigma := math.Sqrt(Variance(Mu, x))
 	stdsqpi := Sigma * math.Pow(2*math.Pi, 0.5)
 	if Mu == 0 {
 		expon = -(d * d) / Sigma
@@ -333,16 +195,9 @@ func Pdf(x []float64, d float64) float64 {
 
 func Cdf(x []float64, d float64) float64 {
 	Mu := Mean(x)
-	Sigma := math.Sqrt(Variance(x))
+	Sigma := math.Sqrt(Variance(Mu, x))
 	dist := d - Mu
-	if math.Abs(dist) > toomanydev*Sigma {
-		if d < Mu {
-			return 0.0
-		} else {
-			return 1.0
-		}
-	}
-	errf := Errf(dist / (Sigma * sqrt2))
+	errf := Errf(dist / (Sigma * math.Sqrt(2)))
 	cdf := 0.5 * (1.0 + errf)
 	return cdf
 }
@@ -366,45 +221,161 @@ func Errf(z float64) float64 {
 	return -ans
 }
 
-func ImpliedVol(x []float64) float64 {
-	_, _, S, _, _, _ := Alpaca()
-	K, _, t := GetOptionsData()
-	R := R(interest)
-
-	d12, _ := math.Lgamma(S / K)
-	s := math.Sqrt(Variance(x))
-	ex := math.Pow(s, 2)
-	d1 := t * (d12 + (R + ex/2))
-	d2 := d1 - (s * math.Sqrt(t))
-	cdf1 := Cdf(x, d1)
-	cdf2 := Cdf(x, d2)
-	pow := math.Pow(math.E, -R*t)
-	call := (S * cdf1) - (K * cdf2 * pow)
-	return call
-}
-
-func Intrinsic(b bool) float64 {
-	R := R(interest)
-	_, _, S, _, _, _ := Alpaca()
-	K, Q, t := GetOptionsData()
-	p := math.Exp(-Q*t)*S - math.Exp(-R*t)*K
-
-	switch b {
-	case true:
-		return math.Max(0, +p)
-	case false:
-		return math.Max(0, -p)
+func NewBlackScholes(str string, option *Option, underlying *Underlying, riskFreeInterestRate float64) *BS {
+	bs := &BS{
+		StrikePrice:          option.StrikePrice,
+		UnderlyingPrice:      underlying.Price,
+		RiskFreeInterestRate: riskFreeInterestRate,
+		Volatility:           underlying.Volatility,
+		TimeToExpiration:     option.TimeToExpiration / 365,
+		Type:                 option.Type,
 	}
-	return math.Abs(p)
+
+	bs.Initialize(str)
+
+	return bs
 }
 
-func Extrinsic(b bool) float64 {
-	_, _, S, _, _, _ := Alpaca()
+func R(interest float64) float64 {
+	r, _ := math.Lgamma(interest)
+	return r
+}
+
+func (bs *BS) Initialize(str string) {
+	eq, _, std := Alpaca(str)
+	bs.Norm = gaussian.NewGaussian(0, 1)
+	bs.D1 = bs.calcD1(bs.UnderlyingPrice, bs.StrikePrice, bs.RiskFreeInterestRate, bs.TimeToExpiration, bs.Volatility)
+	bs.D2 = bs.calcD2(bs.D1, bs.Volatility, bs.TimeToExpiration)
+	bs.Delta = bs.calcDelta()
+	bs.TheoPrice = bs.calcTheoreticalPrice()
+	bs.ImpliedVolatility = bs.calcIv()
+	bs.Theta = bs.calcTheta()
+	bs.Gamma = bs.calcGamma(eq)
+	bs.Kappa = bs.calcKappa()
+	bs.Rho = bs.calcRho()
+	bs.HalfLifeSTD, bs.HalfLifeTheta = bs.calcHalfLife(std)
+}
+
+func (bs *BS) HistoricalVolatility() {
+
+}
+
+func (bs *BS) StandardDeviation(days int, dataPoints []float64) float64 {
+	data := dataPoints[len(dataPoints)-days:]
+
+	var total float64
+
+	for _, d := range data {
+		total += d
+	}
+
+	mean := total / float64(days)
+
+	var temp float64
+
+	for _, d := range data {
+		temp += math.Pow(d-mean, 2)
+	}
+
+	return math.Sqrt(temp / float64(days))
+}
+
+func (bs *BS) calcD1(underlyingPrice float64, strikePrice float64, riskFreeInterestRate float64, timeToExpiration float64, volatility float64) float64 {
+	return (math.Log(underlyingPrice/strikePrice) + (riskFreeInterestRate+math.Pow(volatility, 2)/2)*timeToExpiration) / (volatility * math.Sqrt(timeToExpiration))
+}
+
+func (bs *BS) calcD2(d1 float64, volatility float64, timeToExpiration float64) float64 {
+	return d1 - (volatility * math.Sqrt(timeToExpiration))
+}
+
+func (bs *BS) calcDelta() float64 {
+	return bs.Norm.Cdf(bs.D1)
+}
+
+func (bs *BS) calcGamma(x []float64) float64 {
+	e := math.E
+	ex := math.Pow(0.5*bs.D1, 2)
+	top := math.Pow(e, ex)
+	Mu := Mean(x)
+	bottom := bs.StrikePrice * Variance(Mu, x) * math.Sqrt(2*math.Pi*bs.TimeToExpiration)
+	return top / bottom
+}
+
+func (bs *BS) calcKappa() float64 {
+	n := math.Pow(math.E, math.Pow(bs.D1, 2)/-2) / math.Sqrt(2*math.Pi)
+	kappa := bs.UnderlyingPrice * n * math.Sqrt(bs.TimeToExpiration)
+	return kappa
+}
+
+func (bs *BS) calcRho() float64 {
+	r := R(interest)
+	rho := math.Pow(bs.StrikePrice*bs.TimeToExpiration*math.E, r*bs.TimeToExpiration*bs.Norm.Cdf(bs.D2))
+	return rho
+}
+
+func (bs *BS) calcTheta() float64 {
+	return -((bs.UnderlyingPrice*bs.Volatility*bs.Norm.Cdf(bs.D1))/(2*math.Sqrt(bs.TimeToExpiration)) - bs.RiskFreeInterestRate*bs.StrikePrice*math.Exp(-bs.RiskFreeInterestRate*(bs.TimeToExpiration))*bs.Norm.Cdf(bs.D2)) / 365
+}
+
+func (bs *BS) calcIv() float64 {
+	vol := math.Sqrt(2*math.Pi/bs.TimeToExpiration) * bs.TheoPrice / bs.UnderlyingPrice
+
+	for i := 0; i < 100; i++ {
+
+		d1 := bs.calcD1(bs.UnderlyingPrice, bs.StrikePrice, bs.RiskFreeInterestRate, bs.TimeToExpiration, vol)
+		d2 := bs.calcD2(d1, vol, bs.TimeToExpiration)
+		vega := bs.UnderlyingPrice * bs.Norm.Cdf(d1) * math.Sqrt(bs.TimeToExpiration)
+
+		cp := 1.0
+		if bs.Type == "PUT" {
+			cp = -1
+		}
+
+		price0 := cp*bs.UnderlyingPrice*bs.Norm.Cdf(cp*d1) - cp*bs.StrikePrice*math.Exp(bs.RiskFreeInterestRate*bs.TimeToExpiration)*bs.Norm.Cdf(cp*d2)
+		vol = vol - (price0-bs.TheoPrice)/vega
+
+		if math.Abs(price0-bs.TheoPrice) < math.Pow(10, -25) {
+			break
+		}
+	}
+	return vol
+}
+
+func (bs *BS) calcTheoreticalPrice() float64 {
+	normD1 := bs.Norm.Cdf(bs.D1)
+	normD2 := bs.Norm.Cdf(bs.D2)
+
+	return bs.UnderlyingPrice*normD1 - bs.StrikePrice*math.Pow(math.E, -bs.RiskFreeInterestRate*bs.TimeToExpiration)*normD2
+}
+
+func (bs *BS) calcHalfLife(std float64) (float64, float64) {
+	nl := math.Gamma(2)
+	return (nl / std) * 365, (nl / bs.Theta) * 365
+}
+
+func Intrinsic(b bool, str string) float64 {
+	r := R(interest)
+	_, S, _ := Alpaca(str)
+	K, Q, t := GetOptionsData(str)
+	p1 := math.Exp(-Q*t)*S - math.Exp(-r*t)*K
 	switch b {
 	case true:
-		return S - Intrinsic(true)
+		return math.Max(0, +p1)
 	case false:
-		return S - Intrinsic(false)
+		return math.Max(0, -p1)
+	}
+	return math.Abs(p1)
+}
+
+func Extrinsic(b bool, str string) float64 {
+	_, S, _ := Alpaca(str)
+	i1 := Intrinsic(true, str)
+	i2 := Intrinsic(false, str)
+	switch b {
+	case true:
+		return S - i1
+	case false:
+		return S - i2
 	}
 	return 0.0
 }

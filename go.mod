@@ -7,14 +7,22 @@ require (
 	github.com/piquette/finance-go v1.0.0
 )
 
-require github.com/RobinUS2/golang-moving-average v1.0.0
-
-require github.com/go-echarts/go-echarts/v2 v2.2.4
+require (
+	github.com/RobinUS2/golang-moving-average v1.0.0
+	github.com/chobie/go-gaussian v0.0.0-20150107165016-53c09d90eeaf
+	gonum.org/v1/plot v0.11.0
+)
 
 require (
-	github.com/bitly/go-simplejson v0.5.0 // indirect
-	github.com/zieckey/gochart v0.0.0-20170321103903-03ae93442a96 // indirect
-	github.com/zieckey/goini v0.0.0-20180118150432-0da17d361d26 // indirect
+	git.sr.ht/~sbinet/gg v0.3.1 // indirect
+	github.com/ajstarks/svgo v0.0.0-20211024235047-1546f124cd8b // indirect
+	github.com/go-fonts/liberation v0.2.0 // indirect
+	github.com/go-latex/latex v0.0.0-20210823091927-c0d11ff05a81 // indirect
+	github.com/go-pdf/fpdf v0.6.0 // indirect
+	github.com/golang/freetype v0.0.0-20170609003504-e2365dfdc4a0 // indirect
+	github.com/google/go-cmp v0.5.7 // indirect
+	golang.org/x/image v0.0.0-20220302094943-723b81ca9867 // indirect
+	golang.org/x/text v0.3.7 // indirect
 )
 
 require (
